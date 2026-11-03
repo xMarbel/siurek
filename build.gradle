@@ -13,9 +13,24 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 }
 
+// płaski układ: pliki .java i fabric.mod.json leżą w głównym katalogu
+sourceSets {
+    main {
+        java {
+            srcDirs = ['.']
+            include '*.java'
+        }
+        resources {
+            srcDirs = ['.']
+            include 'fabric.mod.json'
+        }
+    }
+}
+
 processResources {
     inputs.property "version", project.version
     filesMatching("fabric.mod.json") { expand "version": project.version }
+    from('en_us.json') { into 'assets/playertracker/lang' }
 }
 
 tasks.withType(JavaCompile).configureEach { it.options.release = 21 }
