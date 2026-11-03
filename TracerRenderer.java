@@ -30,11 +30,34 @@ public final class TracerRenderer {
     /* ---------------- linie w świecie ---------------- */
 
     public static void render(WorldRenderContext ctx) {
+        try {
+            draw(ctx);
+        } catch (Throwable t) {
+            // nigdy nie wywalaj gry przez tracery
+        }
+    }
+
+    private static void draw(WorldRenderContext ctx) {
         TrackerState.Config c = TrackerState.C;
         if (!c.enabled || c.tracked.isEmpty()) return;
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.world == null || mc.player == null) return;
 
+        // 1) zbierz cele PRZED rozpoczęciem bufora
+        int limit = TrackerState.MAX_DIST[c.maxDistIdx];
+        List<String> names = new ArrayList<>();
+        List<AbstractClientPlayerEntity> targets = new ArrayList<>();
+        for (Map.Entry<String, TrackerState.Entry> en : c.tracked.entrySet()) {
+            if (!en.getValue().visible) continue;
+            AbstractClientPlayerEntity t = find(mc, en.getKey());
+            if (t == null) continue;
+            if (limit > 0 && t.distanceTo(mc.player) > limit) continue;
+            names.add(en.getKey());
+            targets.add(t);
+        }
+        if (targets.isEmpty()) return;
+
+        // 2) dopiero teraz zaczynamy rysować
         float td = ctx.tickCounter().getTickDelta(true);
         Camera camera = ctx.camera();
         Vec3d cam = camera.getPos();
@@ -42,20 +65,13 @@ public final class TracerRenderer {
         Vec3d start = look.multiply(1.0);
         if (c.origin == 1) start = start.subtract(new Vec3d(camera.getVerticalPlane()).multiply(0.5));
         Matrix4f mat = ctx.matrixStack().peek().getPositionMatrix();
-
         int alpha = (int) (255 * (TrackerState.OPACITY[c.opacityIdx] / 100f));
-        int limit = TrackerState.MAX_DIST[c.maxDistIdx];
 
         BufferBuilder b = Tessellator.getInstance().begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
-        boolean any = false;
 
-        for (Map.Entry<String, TrackerState.Entry> en : c.tracked.entrySet()) {
-            if (!en.getValue().visible) continue;
-            AbstractClientPlayerEntity t = find(mc, en.getKey());
-            if (t == null) continue;
-            if (limit > 0 && t.distanceTo(mc.player) > limit) continue;
-
-            int rgb = TrackerState.rgb(en.getKey());
+        for (int i = 0; i < targets.size(); i++) {
+            AbstractClientPlayerEntity t = targets.get(i);
+            int rgb = TrackerState.rgb(names.get(i));
             int r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, bl = rgb & 255;
 
             Vec3d lerped = t.getLerpedPos(td);
@@ -67,9 +83,7 @@ public final class TracerRenderer {
                 Box box = t.getBoundingBox().offset(off).offset(-cam.x, -cam.y, -cam.z);
                 box(b, mat, box, r, g, bl, alpha);
             }
-            any = true;
         }
-        if (!any) return;
 
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
         RenderSystem.lineWidth(c.thickness);
